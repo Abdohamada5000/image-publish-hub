@@ -18,38 +18,4 @@ async function upload(req,env){
  return json({success:true,data:{url:out.data.url,display_url:out.data.display_url||out.data.url,id:out.data.id||null,title:out.data.title||name}});
 }
 
-async function mcp(req,env){
- const headers={"content-type":"application/json; charset=utf-8","cache-control":"no-store",...cors(req,env)};
- const reply=(id,result)=>json({jsonrpc:"2.0",id,result},200,headers);
- const fail=(id,code,message)=>json({jsonrpc:"2.0",id,error:{code,message}},200,headers);
- let body;try{body=await req.json()}catch{return json({jsonrpc:"2.0",id:null,error:{code:-32700,message:"Parse error"}},400,headers)}
- if(!body||body.jsonrpc!=="2.0"||typeof body.method!=="string")return fail(body?.id??null,-32600,"Invalid Request");
- const id=body.id;
- if(body.method==="notifications/initialized"||body.method==="notifications/cancelled")return new Response(null,{status:202,headers});
- if(body.method==="initialize"){
-  const requested=body.params?.protocolVersion;
-  const supported=["2025-03-26","2024-11-05"];
-  const protocolVersion=supported.includes(requested)?requested:"2025-03-26";
-  return reply(id,{protocolVersion,capabilities:{tools:{listChanged:false}},serverInfo:{name:"image-publish-hub",version:"1.0.0"},instructions:"Upload images to ImgBB using the upload_image tool. The service accepts one image per tool call and returns its direct public URL."});
- }
- if(body.method==="ping")return reply(id,{});
- if(body.method==="tools/list")return reply(id,{tools:[{name:"upload_image",description:"Upload one image to the user's ImgBB image hosting account. Supply the image as Base64 (raw Base64 or a data URL). Returns the direct public image URL. Maximum image size: 32 MB.",inputSchema:{type:"object",properties:{image_base64:{type:"string",description:"Image bytes encoded as Base64. A data:image/...;base64, prefix is also accepted."},filename:{type:"string",description:"Original image filename, including extension."},mime_type:{type:"string",description:"Image MIME type, for example image/jpeg or image/png."}},required:["image_base64"],additionalProperties:false}}]});
- if(body.method==="tools/call"){
-  const name=body.params?.name,args=body.params?.arguments||{};
-  if(name!=="upload_image")return fail(id,-32602,"Unknown tool");
-  if(typeof args.image_base64!=="string"||!args.image_base64.length)return fail(id,-32602,"image_base64 is required");
-  const mimeType=typeof args.mime_type==="string"?args.mime_type:"image/jpeg";
-  if(!mimeType.startsWith("image/"))return reply(id,{isError:true,content:[{type:"text",text:"نوع الملف يجب أن يكون صورة."}]});
-  const payload={image:args.image_base64,name:typeof args.filename==="string"?args.filename:"upload.jpg",mimeType};
-  const uploadReq=new Request(new URL("/api/upload",req.url),{method:"POST",headers:{"content-type":"application/json",...(req.headers.get("authorization")?{authorization:req.headers.get("authorization")}:{})},body:JSON.stringify(payload)});
-  const uploaded=await upload(uploadReq,env);
-  let result;try{result=await uploaded.json()}catch{result={success:false,error:"Upload failed"}}
-  if(!uploaded.ok||!result.success)return reply(id,{isError:true,content:[{type:"text",text:result.error||"فشل رفع الصورة."}]});
-  const textResult=JSON.stringify(result.data);
-  return reply(id,{content:[{type:"text",text:textResult}],structuredContent:result.data,isError:false});
- }
- if(id===undefined)return new Response(null,{status:202,headers});
- return fail(id,-32601,"Method not found");
-}
-
-export default {async fetch(req,env){let u=new URL(req.url),h=cors(req,env);if(req.method==='OPTIONS')return new Response(null,{status:204,headers:h});if(u.pathname==='/mcp'&&req.method==='POST')return mcp(req,env);if(u.pathname==='/mcp'&&req.method==='GET')return json({success:false,error:'MCP endpoint accepts POST requests.'},405,{...h,'allow':'POST, OPTIONS'});if(u.pathname==='/'&&req.method==='GET')return new Response(page(),{headers:{'content-type':'text/html; charset=utf-8','cache-control':'no-store'}});if(u.pathname==='/health'&&req.method==='GET')return json({success:true,service:'image-publish-hub',status:'ok'},200,h);if(u.pathname==='/api/upload'&&req.method==='POST'){let r=await upload(req,env),hh=new Headers(r.headers);for(let[k,v]of Object.entries(h))hh.set(k,v);return new Response(r.body,{status:r.status,headers:hh})}return json({success:false,error:'المسار غير موجود.'},404,h)}};
+export default {async fetch(req,env){let u=new URL(req.url),h=cors(req,env);if(req.method==='OPTIONS')return new Response(null,{status:204,headers:h});if(u.pathname==='/'&&req.method==='GET')return new Response(page(),{headers:{'content-type':'text/html; charset=utf-8','cache-control':'no-store'}});if(u.pathname==='/health'&&req.method==='GET')return json({success:true,service:'image-publish-hub',status:'ok'},200,h);if(u.pathname==='/api/upload'&&req.method==='POST'){let r=await upload(req,env),hh=new Headers(r.headers);for(let[k,v]of Object.entries(h))hh.set(k,v);return new Response(r.body,{status:r.status,headers:hh})}return json({success:false,error:'المسار غير موجود.'},404,h)}};
